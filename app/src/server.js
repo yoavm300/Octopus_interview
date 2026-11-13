@@ -20,6 +20,7 @@ app.get('/readyz', async (req, res) => {
     await ping();
     res.send('ready');
   } catch (err) {
+    console.error('readiness check failed:', err.message);
     res.status(503).send('not ready');
   }
 });

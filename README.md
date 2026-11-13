@@ -3,6 +3,7 @@
 [![ci](https://github.com/yoavm300/Octopus_interview/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/yoavm300/Octopus_interview/actions/workflows/ci.yml)
 [![lint](https://github.com/yoavm300/Octopus_interview/actions/workflows/lint.yml/badge.svg?branch=main)](https://github.com/yoavm300/Octopus_interview/actions/workflows/lint.yml)
 [![deploy-aws](https://github.com/yoavm300/Octopus_interview/actions/workflows/deploy-aws.yml/badge.svg?branch=main)](https://github.com/yoavm300/Octopus_interview/actions/workflows/deploy-aws.yml)
+[![teardown-aws](https://github.com/yoavm300/Octopus_interview/actions/workflows/teardown-aws.yml/badge.svg?branch=main)](https://github.com/yoavm300/Octopus_interview/actions/workflows/teardown-aws.yml)
 
 A "hello world" apples page backed by MongoDB, fully defined as code: a NodeJS app,
 MongoDB, and a one-shot data-seed Job, each in its own container, deployed via Helm.

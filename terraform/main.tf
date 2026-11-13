@@ -19,10 +19,11 @@ module "ecr" {
 module "eks" {
   source = "./modules/eks"
 
-  cluster_name       = var.cluster_name
-  cluster_subnet_ids = concat(module.vpc.public_subnet_ids, module.vpc.private_subnet_ids)
-  node_subnet_ids    = module.vpc.private_subnet_ids
-  kms_key_arn        = aws_kms_key.this.arn
+  cluster_name         = var.cluster_name
+  cluster_subnet_ids   = concat(module.vpc.public_subnet_ids, module.vpc.private_subnet_ids)
+  node_subnet_ids      = module.vpc.private_subnet_ids
+  kms_key_arn          = aws_kms_key.this.arn
+  admin_principal_arns = var.admin_principal_arns
 }
 
 module "alb" {

@@ -1,7 +1,9 @@
 # One-time bootstrap: the GitHub Actions OIDC provider and the role the
-# deploy-aws.yml workflow assumes. This can't be created by the workflow
-# itself (it needs the role to exist before it can assume anything), so it's
-# applied once, manually, with real AWS credentials -- not by CI.
+# deploy-aws.yml workflow assumes, plus the S3 bucket + DynamoDB lock table
+# the main terraform/ root module uses as its remote state backend. All of
+# this has to exist before the workflow that depends on it can run (and the
+# state backend can't manage its own state), so it's applied once, manually,
+# with real AWS credentials -- not by CI.
 
 data "tls_certificate" "github" {
   url = "https://token.actions.githubusercontent.com"
@@ -91,6 +93,78 @@ resource "aws_iam_role_policy" "deploy" {
         ]
         Resource = "*"
       },
+      {
+        Sid    = "TfStateBackend"
+        Effect = "Allow"
+        Action = [
+          "s3:GetObject",
+          "s3:PutObject",
+          "s3:ListBucket",
+        ]
+        Resource = [
+          aws_s3_bucket.tfstate.arn,
+          "${aws_s3_bucket.tfstate.arn}/*",
+        ]
+      },
+      {
+        Sid    = "TfStateLock"
+        Effect = "Allow"
+        Action = [
+          "dynamodb:GetItem",
+          "dynamodb:PutItem",
+          "dynamodb:DeleteItem",
+        ]
+        Resource = aws_dynamodb_table.tf_locks.arn
+      },
     ]
   })
+}
+
+# Remote state backend for terraform/, so a terraform apply and the
+# teardown that must later undo it can run in different CI jobs (each on a
+# fresh runner with no local state) and still see the same resources. A
+# previous live test found this out the hard way: a failed apply left a
+# real EKS cluster running, and the next job's "terraform destroy" had
+# nothing to destroy because its local state was empty.
+resource "random_id" "tfstate_suffix" {
+  byte_length = 4
+}
+
+resource "aws_s3_bucket" "tfstate" {
+  bucket = "apples-exercise-tfstate-${random_id.tfstate_suffix.hex}"
+}
+
+resource "aws_s3_bucket_versioning" "tfstate" {
+  bucket = aws_s3_bucket.tfstate.id
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "tfstate" {
+  bucket = aws_s3_bucket.tfstate.id
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "aws:kms"
+    }
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "tfstate" {
+  bucket                  = aws_s3_bucket.tfstate.id
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource "aws_dynamodb_table" "tf_locks" {
+  name         = "apples-exercise-tfstate-locks"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "LockID"
+
+  attribute {
+    name = "LockID"
+    type = "S"
+  }
 }

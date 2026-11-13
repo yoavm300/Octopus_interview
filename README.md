@@ -139,13 +139,23 @@ picking the wrong option in `deploy-aws.yml`'s apply/destroy dropdown.
 One-time setup before this workflow can run (not part of the graded path):
 
 1. Apply `terraform/bootstrap/` once, manually, with real AWS credentials — it
-   creates the GitHub OIDC provider and the IAM role the workflow assumes. It can't
-   be applied by the workflow itself (chicken-and-egg: the role has to exist before
-   anything can assume it).
-2. Add two repo secrets: `AWS_DEPLOY_ROLE_ARN` (the bootstrap's `deploy_role_arn`
-   output) and `MONGO_PASSWORD` (any value — the demo Mongo password, not an AWS
-   credential).
+   creates the GitHub OIDC provider and IAM role the workflow assumes, plus the
+   S3 bucket + DynamoDB table `terraform/`'s remote state lives in. None of this
+   can be applied by the workflow itself (chicken-and-egg: it all has to exist
+   before anything can assume the role or write state to it).
+2. Add four repo secrets: `AWS_DEPLOY_ROLE_ARN` (bootstrap's `deploy_role_arn`
+   output), `TF_STATE_BUCKET` (`tfstate_bucket` output), `TF_LOCK_TABLE`
+   (`tfstate_lock_table` output), and `MONGO_PASSWORD` (any value — the demo
+   Mongo password, not an AWS credential).
 3. Run the workflow from the Actions tab, choosing `apply` or `destroy`.
+
+A remote state backend matters here specifically because `apply` and `destroy`
+run as separate `workflow_dispatch` invocations, each on its own disposable
+GitHub Actions runner — without one, the state written by an `apply` run
+would vanish with that runner, and a later `destroy` run would have nothing
+to act on. (This is exactly what happened before the backend was added: a
+failed `apply` left a real EKS cluster running, with no state anywhere that
+`teardown-aws.yml` could use to find and remove it.)
 
 ## Data
 

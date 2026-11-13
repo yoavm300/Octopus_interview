@@ -50,6 +50,14 @@ resource "helm_release" "alb_controller" {
   chart      = "aws-load-balancer-controller"
   namespace  = "kube-system"
 
+  # Default 300s wasn't enough: the node group reports ACTIVE before its
+  # nodes are actually Ready (kubelet registration + VPC CNI warm-up), so
+  # the controller pod has nowhere to schedule yet when this starts timing.
+  # atomic rolls back a failed install instead of leaving a stuck release
+  # that blocks the next apply.
+  timeout = 600
+  atomic  = true
+
   set {
     name  = "clusterName"
     value = var.cluster_name

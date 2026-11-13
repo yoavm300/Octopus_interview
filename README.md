@@ -1,5 +1,8 @@
 # Apples app — infrastructure exercise
 
+[![ci](https://github.com/yoavm300/Octopus_interview/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/yoavm300/Octopus_interview/actions/workflows/ci.yml)
+[![deploy-aws](https://github.com/yoavm300/Octopus_interview/actions/workflows/deploy-aws.yml/badge.svg?branch=main)](https://github.com/yoavm300/Octopus_interview/actions/workflows/deploy-aws.yml)
+
 A "hello world" apples page backed by MongoDB, fully defined as code: a NodeJS app,
 MongoDB, and a one-shot data-seed Job, each in its own container, deployed via Helm.
 See [`docs/architecture.md`](docs/architecture.md) for the full design and network

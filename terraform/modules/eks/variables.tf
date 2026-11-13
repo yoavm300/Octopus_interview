@@ -30,3 +30,14 @@ variable "node_desired_size" {
   type        = number
   default     = 2
 }
+
+variable "kms_key_arn" {
+  description = "ARN of the customer-managed KMS key used to encrypt EKS secrets"
+  type        = string
+}
+
+variable "public_access_cidrs" {
+  description = "CIDRs allowed to reach the public cluster endpoint. Left open by default so this demo cluster is reachable without a VPN/bastion; narrow this for anything longer-lived."
+  type        = list(string)
+  default     = ["0.0.0.0/0"]
+}

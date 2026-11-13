@@ -22,8 +22,22 @@ resource "aws_eks_cluster" "this" {
   version  = var.kubernetes_version
 
   vpc_config {
-    subnet_ids = var.cluster_subnet_ids
+    subnet_ids              = var.cluster_subnet_ids
+    endpoint_private_access = true
+    #tfsec:ignore:aws-eks-no-public-cluster-access -- provision-aws.sh runs kubectl/helm directly from the operator's machine; no VPN/bastion in this exercise, so the public endpoint is required.
+    endpoint_public_access = true
+    #tfsec:ignore:aws-eks-no-public-cluster-access-to-cidr -- same reasoning as above; narrow this for anything longer-lived than a demo.
+    public_access_cidrs = var.public_access_cidrs
   }
+
+  encryption_config {
+    resources = ["secrets"]
+    provider {
+      key_arn = var.kms_key_arn
+    }
+  }
+
+  enabled_cluster_log_types = ["api", "audit", "authenticator", "controllerManager", "scheduler"]
 
   depends_on = [aws_iam_role_policy_attachment.cluster_policy]
 }

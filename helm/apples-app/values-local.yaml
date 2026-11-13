@@ -1,0 +1,12 @@
+service:
+  type: ClusterIP
+
+mongo:
+  persistence:
+    enabled: false
+  credentials:
+    username: appuser
+    password: local-dev-password
+
+ingress:
+  enabled: false

@@ -1,0 +1,9 @@
+CLAUDE.md
+
+node_modules/
+
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example

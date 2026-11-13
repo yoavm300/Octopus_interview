@@ -1,0 +1,61 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: terraform
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+      - run: terraform init -backend=false
+      - run: terraform fmt -check -recursive
+      - run: terraform validate
+      - uses: aquasecurity/tfsec-action@v1.0.3
+        with:
+          working_directory: terraform
+
+  helm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+      - run: helm lint helm/apples-app -f helm/apples-app/values.yaml -f helm/apples-app/values-local.yaml
+      - run: helm template helm/apples-app -f helm/apples-app/values.yaml -f helm/apples-app/values-local.yaml
+
+  image-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t apples-app:ci app/
+      - uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: apples-app:ci
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+
+  secrets-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  local-smoke-test:
+    runs-on: ubuntu-latest
+    needs: [terraform, helm, image-scan, secrets-scan]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: helm/kind-action@v1
+        with:
+          cluster_name: apples-local
+      - run: ./scripts/provision-local.sh
+      - run: ./scripts/check.sh

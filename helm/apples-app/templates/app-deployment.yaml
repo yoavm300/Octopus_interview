@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "apples-app.fullname" . }}
+  labels:
+    {{- include "apples-app.labels" . | nindent 4 }}
+    app.kubernetes.io/component: app
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "apples-app.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: app
+  template:
+    metadata:
+      labels:
+        {{- include "apples-app.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: app
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+      containers:
+        - name: app
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+          ports:
+            - containerPort: {{ .Values.service.targetPort }}
+          env:
+            - name: PORT
+              value: "{{ .Values.service.targetPort }}"
+            - name: MONGO_DB
+              value: {{ .Values.mongo.database | quote }}
+            - name: MONGO_URI
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "apples-app.fullname" . }}-mongo
+                  key: uri
+          resources:
+            {{- toYaml .Values.resources.app | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.service.targetPort }}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: {{ .Values.service.targetPort }}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}

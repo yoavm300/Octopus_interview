@@ -6,4 +6,5 @@ node_modules/
 *.tfstate
 *.tfstate.*
 *.tfvars
+tfplan
 !*.tfvars.example

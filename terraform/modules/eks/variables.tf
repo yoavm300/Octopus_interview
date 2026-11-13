@@ -41,3 +41,9 @@ variable "public_access_cidrs" {
   type        = list(string)
   default     = ["0.0.0.0/0"]
 }
+
+variable "admin_principal_arns" {
+  description = "IAM user/role ARNs to grant cluster-admin access via EKS access entries, in addition to the principal that applied Terraform (which gets cluster-creator access automatically). Lets an operator kubectl into the cluster for debugging without needing to assume the CI deploy role."
+  type        = list(string)
+  default     = []
+}

@@ -40,11 +40,28 @@ export MONGO_PASSWORD=...   # never commit this
 ./scripts/teardown-aws.sh
 ```
 
-## CI
+## CI/CD
 
 `.github/workflows/ci.yml` runs on every push/PR: Terraform validate/fmt + tfsec,
 Helm lint/template, a Trivy image scan, a gitleaks secrets scan, and the full local
 kind smoke test (the same thing `scripts/provision-local.sh` + `scripts/check.sh` do).
+
+`.github/workflows/deploy-aws.yml` is the actual cloud-provider CD pipeline (bonus):
+manually triggered (`workflow_dispatch`, not on every push, to avoid spending real
+money on every commit), it runs `scripts/provision-aws.sh` or `scripts/teardown-aws.sh`
+against real AWS, authenticating via OIDC role assumption — no long-lived AWS keys
+stored in GitHub.
+
+One-time setup before this workflow can run (not part of the graded path):
+
+1. Apply `terraform/bootstrap/` once, manually, with real AWS credentials — it
+   creates the GitHub OIDC provider and the IAM role the workflow assumes. It can't
+   be applied by the workflow itself (chicken-and-egg: the role has to exist before
+   anything can assume it).
+2. Add two repo secrets: `AWS_DEPLOY_ROLE_ARN` (the bootstrap's `deploy_role_arn`
+   output) and `MONGO_PASSWORD` (any value — the demo Mongo password, not an AWS
+   credential).
+3. Run the workflow from the Actions tab, choosing `apply` or `destroy`.
 
 ## Data
 

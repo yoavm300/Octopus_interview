@@ -55,6 +55,10 @@ money on every commit), it runs `scripts/provision-aws.sh` or `scripts/teardown-
 against real AWS, authenticating via OIDC role assumption — no long-lived AWS keys
 stored in GitHub.
 
+`.github/workflows/teardown-aws.yml` is a dedicated, single-purpose "stop the
+spending" button — same OIDC auth, always tears down, so there's no risk of
+picking the wrong option in `deploy-aws.yml`'s apply/destroy dropdown.
+
 One-time setup before this workflow can run (not part of the graded path):
 
 1. Apply `terraform/bootstrap/` once, manually, with real AWS credentials — it

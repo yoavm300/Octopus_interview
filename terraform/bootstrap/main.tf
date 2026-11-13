@@ -27,7 +27,10 @@ resource "aws_iam_role" "deploy" {
           "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
         }
         StringLike = {
-          "token.actions.githubusercontent.com:sub" = "repo:${var.github_repo}:*"
+          # GitHub embeds numeric owner/repo IDs in the sub claim (e.g.
+          # "repo:owner@123/repo@456:ref:...") as an anti-spoofing measure, so
+          # match on name prefixes rather than the exact "owner/repo" string.
+          "token.actions.githubusercontent.com:sub" = "repo:${replace(var.github_repo, "/", "*/")}*:*"
         }
       }
     }]

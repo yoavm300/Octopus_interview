@@ -1,0 +1,62 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["image", "service", "mongo"],
+  "properties": {
+    "image": {
+      "type": "object",
+      "required": ["repository", "tag"],
+      "properties": {
+        "repository": { "type": "string" },
+        "tag": { "type": "string" },
+        "pullPolicy": { "type": "string" }
+      }
+    },
+    "replicaCount": { "type": "integer", "minimum": 1 },
+    "service": {
+      "type": "object",
+      "required": ["type", "port", "targetPort"],
+      "properties": {
+        "type": { "type": "string" },
+        "port": { "type": "integer" },
+        "targetPort": { "type": "integer" }
+      }
+    },
+    "mongo": {
+      "type": "object",
+      "required": ["image", "port", "database", "credentials"],
+      "properties": {
+        "image": { "type": "string" },
+        "port": { "type": "integer" },
+        "database": { "type": "string" },
+        "persistence": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "size": { "type": "string" }
+          }
+        },
+        "credentials": {
+          "type": "object",
+          "required": ["username"],
+          "properties": {
+            "username": { "type": "string" },
+            "password": { "type": "string" }
+          }
+        }
+      }
+    },
+    "ingress": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "className": { "type": "string" },
+        "annotations": { "type": "object" },
+        "host": { "type": "string" }
+      }
+    },
+    "seedData": {
+      "type": "array"
+    }
+  }
+}

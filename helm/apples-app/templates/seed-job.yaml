@@ -1,0 +1,40 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "apples-app.fullname" . }}-seed
+  labels:
+    {{- include "apples-app.labels" . | nindent 4 }}
+    app.kubernetes.io/component: seed
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        {{- include "apples-app.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: seed
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+      containers:
+        - name: seed
+          image: {{ .Values.mongo.image }}
+          securityContext:
+            allowPrivilegeEscalation: false
+          command:
+            - mongosh
+            - $(MONGO_URI)
+            - --quiet
+            - --eval
+            - {{ printf "db.fruits.deleteMany({}); db.fruits.insertMany(%s)" (.Values.seedData | toJson) | quote }}
+          env:
+            - name: MONGO_URI
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "apples-app.fullname" . }}-mongo
+                  key: uri

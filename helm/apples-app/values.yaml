@@ -1,0 +1,67 @@
+image:
+  repository: apples-app
+  tag: latest
+  pullPolicy: IfNotPresent
+
+replicaCount: 1
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 3000
+
+resources:
+  app:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+  mongo:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+mongo:
+  image: mongo:7
+  port: 27017
+  database: fruits
+  persistence:
+    enabled: true
+    size: 1Gi
+  credentials:
+    username: appuser
+    # Never commit a real password here. values-local.yaml uses a throwaway dev
+    # value; the AWS path supplies it at deploy time via --set.
+    password: ""
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  host: ""
+
+# Seed data required by the exercise brief. Single source of truth: the
+# seed Job renders this straight into a mongosh insertMany call.
+seedData:
+  - _id: 1
+    name: apples
+    qty: 5
+    rating: 3
+  - _id: 2
+    name: bananas
+    qty: 7
+    rating: 1
+    microsieverts: 0.1
+  - _id: 3
+    name: oranges
+    qty: 6
+    rating: 2
+  - _id: 4
+    name: avocados
+    qty: 3
+    rating: 5

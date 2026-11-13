@@ -1,6 +1,7 @@
 # Apples app — infrastructure exercise
 
 [![ci](https://github.com/yoavm300/Octopus_interview/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/yoavm300/Octopus_interview/actions/workflows/ci.yml)
+[![lint](https://github.com/yoavm300/Octopus_interview/actions/workflows/lint.yml/badge.svg?branch=main)](https://github.com/yoavm300/Octopus_interview/actions/workflows/lint.yml)
 [![deploy-aws](https://github.com/yoavm300/Octopus_interview/actions/workflows/deploy-aws.yml/badge.svg?branch=main)](https://github.com/yoavm300/Octopus_interview/actions/workflows/deploy-aws.yml)
 
 A "hello world" apples page backed by MongoDB, fully defined as code: a NodeJS app,
@@ -48,6 +49,11 @@ export MONGO_PASSWORD=...   # never commit this
 `.github/workflows/ci.yml` runs on every push/PR: Terraform validate/fmt + tfsec,
 Helm lint/template, a Trivy image scan, a gitleaks secrets scan, and the full local
 kind smoke test (the same thing `scripts/provision-local.sh` + `scripts/check.sh` do).
+
+`.github/workflows/lint.yml` runs on every push/PR too, but for style rather than
+correctness: ESLint on `app/`, yamllint on the workflow/Helm-values YAML,
+actionlint on the workflow files themselves, and commitlint (Conventional
+Commits) on the commits in the push/PR.
 
 `.github/workflows/deploy-aws.yml` is the actual cloud-provider CD pipeline (bonus):
 manually triggered (`workflow_dispatch`, not on every push, to avoid spending real

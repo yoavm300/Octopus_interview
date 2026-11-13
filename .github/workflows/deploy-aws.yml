@@ -22,6 +22,8 @@ jobs:
     env:
       AWS_REGION: us-east-1
       MONGO_PASSWORD: ${{ secrets.MONGO_PASSWORD }}
+      TF_STATE_BUCKET: ${{ secrets.TF_STATE_BUCKET }}
+      TF_LOCK_TABLE: ${{ secrets.TF_LOCK_TABLE }}
     steps:
       - uses: actions/checkout@v7
 

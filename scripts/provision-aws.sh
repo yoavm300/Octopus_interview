@@ -8,9 +8,14 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 AWS_REGION="${AWS_REGION:-us-east-1}"
 MONGO_PASSWORD="${MONGO_PASSWORD:?Set MONGO_PASSWORD env var}"
+TF_STATE_BUCKET="${TF_STATE_BUCKET:?Set TF_STATE_BUCKET env var (terraform/bootstrap output: tfstate_bucket)}"
+TF_LOCK_TABLE="${TF_LOCK_TABLE:?Set TF_LOCK_TABLE env var (terraform/bootstrap output: tfstate_lock_table)}"
 
 echo "==> Applying Terraform (AWS infra)"
-terraform -chdir=terraform init
+terraform -chdir=terraform init \
+  -backend-config="bucket=${TF_STATE_BUCKET}" \
+  -backend-config="dynamodb_table=${TF_LOCK_TABLE}" \
+  -backend-config="region=${AWS_REGION}"
 terraform -chdir=terraform apply -auto-approve -var="region=${AWS_REGION}"
 
 CLUSTER_NAME=$(terraform -chdir=terraform output -raw eks_cluster_name)

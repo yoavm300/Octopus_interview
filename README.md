@@ -37,6 +37,76 @@ just upgrades in place.
 
 Full write-up: [`docs/architecture.md`](docs/architecture.md).
 
+## Project layout
+
+```
+app/                      NodeJS/Express app — the only piece with application code
+  src/server.js             routes: "/" (apple count), "/healthz", "/readyz"
+  src/db.js                 Mongo connection + queries
+  Dockerfile                multi-stage build (deps stage, then a slim non-root runtime)
+
+helm/apples-app/           One chart, deploys app + MongoDB + the seed Job together
+  Chart.yaml
+  values.yaml                base values: image, resources, probes, the fixed seedData
+  values-local.yaml           overlay: ClusterIP service, ephemeral storage — for kind
+  values-aws.yaml              overlay: ALB Ingress annotations, persistent volume — for EKS
+  values.schema.json          validates values shape (catches typos before a bad install)
+  templates/_helpers.tpl      shared labels/selectors used by every template
+  templates/app-deployment.yaml / app-service.yaml   the NodeJS app
+  templates/mongo-statefulset.yaml / mongo-service.yaml   MongoDB (headless Service, PVC-ready)
+  templates/mongo-secret.yaml  Mongo credentials as a Kubernetes Secret, never in plaintext values
+  templates/seed-job.yaml     post-install/post-upgrade hook Job that loads the fixed fruit data
+  templates/ingress.yaml      optional Ingress, only rendered when an overlay enables it
+
+terraform/                 AWS bonus path — provisions the cloud the chart above deploys onto
+  main.tf / providers.tf / variables.tf / outputs.tf   root config for the one demo environment
+  modules/vpc/               VPC, subnets, flow logs
+  modules/eks/                 EKS cluster, node group, OIDC provider for IRSA
+  modules/ecr/                 container registry for the app image
+  modules/alb/                 AWS Load Balancer Controller (IRSA role + helm_release)
+  bootstrap/                 separate, one-time-applied root module: creates the GitHub
+                                Actions OIDC trust + IAM role, so CI can assume it later
+                                (has to exist before any workflow can use it — chicken-and-egg)
+
+scripts/                   Top-level, idempotent entry points — what grading actually runs
+  provision-local.sh         build image, create/reuse a kind cluster, helm install — no cloud
+  check.sh                   asserts the page reports the correct apple count
+  demo.sh                     prints/shows the live containers, pods, services, network
+  teardown-local.sh           tears the kind cluster down
+  provision-aws.sh            terraform apply, push image to ECR, helm install onto EKS
+  teardown-aws.sh             terraform destroy — the AWS "stop the spending" path
+
+.github/workflows/         CI/CD — kept separate from the provisioning scripts it calls
+  ci.yml                      runs the checks above on every push/PR: terraform validate/tfsec,
+                                 helm lint/template, Trivy image scan, gitleaks, kind smoke test
+  lint.yml                     style/hygiene, not correctness: eslint, yamllint, actionlint,
+                                 commitlint — also every push/PR
+  deploy-aws.yml               manual (workflow_dispatch) real AWS apply/destroy via OIDC
+  teardown-aws.yml             manual-only, single-purpose destroy — a dedicated safety net
+
+docs/                      Design material that doesn't belong inline in this README
+  architecture.md             full component/network-topology diagrams + security notes
+```
+
+Rationale behind the split:
+- **`app/` vs `helm/` vs `terraform/`** are separated by concern, not by environment: the app
+  doesn't know about Kubernetes, the chart doesn't know about AWS, and Terraform doesn't know
+  about the app's code — each layer only depends on the one below it.
+- **One Helm chart, two values overlays** (`values-local.yaml` / `values-aws.yaml`) instead of
+  two charts, so the local (graded) and AWS (bonus) deployments can never silently drift apart.
+- **`terraform/modules/`** exists even though there's only one environment, because splitting
+  vpc/eks/ecr/alb into modules is how a real Terraform codebase would be organized — full
+  multi-environment workspaces would be disproportionate here, but the module boundary itself
+  is worth keeping.
+- **`terraform/bootstrap/`** is its own root module, not folded into `terraform/`, because it has
+  a different lifecycle (applied once, by hand, long before any EKS infra exists) and a different
+  blast radius (IAM trust, not disposable demo infra).
+- **`scripts/`** is the one directory grading actually depends on: everything else exists to
+  support what these scripts do, so they stay flat, named by action, and runnable with no
+  arguments.
+- **CI (`.github/workflows/`) calls the scripts rather than re-implementing them**, so "what CI
+  checks" and "what you can run yourself locally" never diverge.
+
 ## AWS path (bonus)
 
 ```sh

@@ -7,8 +7,6 @@
 
 A "hello world" apples page backed by MongoDB, fully defined as code: a NodeJS app,
 MongoDB, and a one-shot data-seed Job, each in its own container, deployed via Helm.
-See [`docs/architecture.md`](docs/architecture.md) for the full design and network
-topology.
 
 ## Quick start (local — this is the graded path, no cloud account needed)
 
@@ -24,18 +22,117 @@ just upgrades in place.
 
 ## Architecture
 
-- **app** (`app/`) — NodeJS/Express, serves the apples page, `/healthz`, `/readyz`.
-- **mongo** — MongoDB, seeded via a Helm hook Job with the exact fruit data from the
-  exercise brief.
-- **helm/apples-app** — the chart deploying all of the above; `values-local.yaml` and
-  `values-aws.yaml` are value overlays on the same base chart, so the identical
-  templates work unmodified on a local `kind` cluster or on EKS.
-- **terraform/** (bonus) — provisions the AWS side (VPC, EKS, ECR, and the AWS Load
-  Balancer Controller for the Ingress/load balancer bonus) so the same Helm chart can
-  also be deployed there via `scripts/provision-aws.sh`. Not required to pass — grading
-  runs the local scripts without any cloud credentials.
+### Components
 
-Full write-up: [`docs/architecture.md`](docs/architecture.md).
+- **app** — a small NodeJS/Express service. Serves one page showing the current apple
+  count read from MongoDB, plus `/healthz` (liveness) and `/readyz` (readiness, checks
+  the DB connection).
+- **mongo** — a single-replica MongoDB instance (StatefulSet), holding the `fruits`
+  collection.
+- **seed** — a Helm post-install/post-upgrade hook Job that inserts the exercise's
+  fixed fruit data into `fruits` on every install/upgrade.
+
+Each runs in its own container, per the brief. **helm/apples-app** is the one chart
+deploying all three; `values-local.yaml` and `values-aws.yaml` are value overlays on
+the same base chart, so the identical templates work unmodified on a local `kind`
+cluster or on EKS — only the overlay differs (service type, persistence, ingress).
+**terraform/** (bonus) provisions the AWS side (VPC, EKS, ECR, the AWS Load Balancer
+Controller) so the same Helm chart can also be deployed there via
+`scripts/provision-aws.sh`. Not required to pass — grading runs the local scripts
+without any cloud credentials.
+
+### Network topology (local / kind)
+
+```
+                 +----------------------------+
+                 |   kind cluster "apples-local" |
+                 |                                |
+  localhost      |   +----------+     +--------+  |
+  (port-forward) +-->| app Svc  +---->| app Pod|  |
+                 |   | ClusterIP|     +----+---+  |
+                 |   +----------+          |      |
+                 |                         v      |
+                 |   +-------------+  mongo:27017 |
+                 |   | mongo Svc   +--->+--------+ |
+                 |   | headless    |    |mongo Pod| |
+                 |   +-------------+    +--------+ |
+                 +----------------------------+
+```
+
+No Ingress/load balancer locally — `scripts/check.sh` reaches the app via
+`kubectl port-forward`, which is sufficient for the "provision from scratch + verify"
+requirement without needing a cloud account.
+
+### Network topology (AWS, bonus)
+
+```
+ Internet
+    |
+    v
+ ALB (via AWS Load Balancer Controller, Ingress)
+    |
+    v
+ EKS cluster (private subnets, NAT-routed egress)
+    |
+    +-- app Deployment  -- app Service (ClusterIP)
+    |
+    +-- mongo StatefulSet (EBS-backed PVC) -- mongo Service (headless)
+
+VPC: 2 public subnets (ALB, NAT GW) + 2 private subnets (EKS nodes), across 2 AZs.
+ECR holds the built app image; EKS nodes pull from it.
+```
+
+Same Helm chart as local — only `values-aws.yaml` differs (ingress enabled with an
+ALB class, persistent storage enabled, password supplied at deploy time instead of a
+checked-in dev default).
+
+### Containers
+
+| Container | Image               | Role                                   |
+|-----------|---------------------|-----------------------------------------|
+| app       | built from `app/`   | serves the apples page                 |
+| mongo     | `mongo:7`           | data store                             |
+| seed      | `mongo:7` (Job)     | one-shot: inserts the fixed fruit data |
+
+### Security notes
+
+- App and seed containers run as non-root with `allowPrivilegeEscalation: false`; the
+  app's root filesystem is read-only (writable `/tmp` only).
+- Mongo runs as non-root too; an init container (running briefly as root) `chown`s the
+  data volume so the main container doesn't need root.
+- Mongo credentials live in a Kubernetes `Secret`, never committed in plaintext. The
+  local dev password is a throwaway value in `values-local.yaml`; the AWS path expects
+  it supplied via `--set` at deploy time.
+
+### Operational notes (found live, on real AWS)
+
+A handful of details below only matter on the AWS path, and only exist in the code
+because a live `apply`/`destroy` cycle against a real account surfaced them —
+each is a real failure mode, not speculative hardening:
+
+- **Storage provisioner.** Modern EKS doesn't bundle one. Mongo's PVC would stay
+  `Pending` forever ("no persistent volumes available for this claim and no storage
+  class is set") without the `aws-ebs-csi-driver` EKS addon and a default `gp3`
+  `StorageClass`, both provisioned by `terraform/modules/eks`.
+- **Mongo's memory limit.** 256Mi OOMKilled `mongod` five seconds into its very
+  first boot on a real EKS node (WiredTiger's default cache sizing alone needs close
+  to that much) — worked fine on `kind`, where memory pressure differs. Raised to
+  512Mi.
+- **The ALB controller doesn't auto-discover reliably.** It resolves its VPC ID and
+  region via EC2 instance metadata (IMDS) by default, and that call can time out from
+  inside a pod's network namespace, leaving the controller crash-looping. Both are
+  passed to the Helm release explicitly instead (`terraform/modules/alb`).
+- **EKS's "cluster creator gets implicit admin" doesn't reliably apply** once the
+  cluster's `access_config` is set explicitly (needed to support an optional
+  `admin_principal_arns` variable that lets an operator `kubectl` into the cluster to
+  debug, without assuming the CI role). Fixed by always granting whoever actually ran
+  Terraform an explicit EKS access entry instead of relying on that behavior.
+- **A few AWS APIs lag behind their own writes** by seconds to minutes right after a
+  dependent resource changes — ECR's `ListTagsForResource` right after
+  `CreateRepository`, a security group or VPC-CNI secondary ENI a moment after the
+  resource that owned it is deleted. `provision-aws.sh` and `teardown-aws.sh` both
+  retry `terraform apply`/`destroy` a few times with a short backoff to absorb this,
+  rather than treating it as a hard failure.
 
 ## Project layout
 
@@ -83,9 +180,6 @@ scripts/                   Top-level, idempotent entry points — what grading a
                                  commitlint — also every push/PR
   deploy-aws.yml               manual (workflow_dispatch) real AWS apply/destroy via OIDC
   teardown-aws.yml             manual-only, single-purpose destroy — a dedicated safety net
-
-docs/                      Design material that doesn't belong inline in this README
-  architecture.md             full component/network-topology diagrams + security notes
 ```
 
 Rationale behind the split:

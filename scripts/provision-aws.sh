@@ -16,7 +16,22 @@ terraform -chdir=terraform init \
   -backend-config="bucket=${TF_STATE_BUCKET}" \
   -backend-config="dynamodb_table=${TF_LOCK_TABLE}" \
   -backend-config="region=${AWS_REGION}"
-terraform -chdir=terraform apply -auto-approve -var="region=${AWS_REGION}"
+
+# Retried, not one-shot, for the same reason teardown-aws.sh retries destroy:
+# a couple of AWS APIs (ECR's ListTagsForResource right after CreateRepository,
+# at least) lag behind their own write for a few seconds. Re-running apply
+# picks up exactly where state left off.
+for attempt in 1 2 3; do
+  if terraform -chdir=terraform apply -auto-approve -var="region=${AWS_REGION}"; then
+    break
+  fi
+  if [ "${attempt}" = "3" ]; then
+    echo "==> terraform apply failed after 3 attempts" >&2
+    exit 1
+  fi
+  echo "==> apply attempt ${attempt} failed, retrying in 30s (likely AWS eventual consistency)" >&2
+  sleep 30
+done
 
 CLUSTER_NAME=$(terraform -chdir=terraform output -raw eks_cluster_name)
 ECR_REPO=$(terraform -chdir=terraform output -raw ecr_repository_url)

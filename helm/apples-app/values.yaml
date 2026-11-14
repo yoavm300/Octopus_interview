@@ -21,10 +21,14 @@ resources:
   mongo:
     requests:
       cpu: 100m
-      memory: 128Mi
+      memory: 256Mi
+    # 256Mi OOMKilled mongod 5s into its very first boot on real EKS
+    # (exit 137) -- WiredTiger's default cache sizing alone needs close to
+    # that much, leaving no room for the rest of the process. Worked on
+    # kind, where memory pressure differs; found live on AWS.
     limits:
       cpu: 500m
-      memory: 256Mi
+      memory: 512Mi
 
 mongo:
   image: mongo:7

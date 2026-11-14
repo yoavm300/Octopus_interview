@@ -32,4 +32,6 @@ module "alb" {
   cluster_name      = module.eks.cluster_name
   oidc_provider_arn = module.eks.oidc_provider_arn
   oidc_provider_url = module.eks.oidc_provider_url
+  vpc_id            = module.vpc.vpc_id
+  region            = var.region
 }

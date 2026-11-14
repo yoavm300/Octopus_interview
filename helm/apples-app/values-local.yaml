@@ -6,7 +6,10 @@ mongo:
     enabled: false
   credentials:
     username: appuser
-    password: local-dev-password
+    # Supplied at provision time by provision-local.sh via --set, generated
+    # into a gitignored .local-mongo-password file -- never a hardcoded
+    # value here, same reasoning as values-aws.yaml's password.
+    password: ""
 
 ingress:
   enabled: false

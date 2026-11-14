@@ -208,12 +208,51 @@ Rationale behind the split:
 ## AWS path (bonus)
 
 ```sh
-export MONGO_PASSWORD=...   # never commit this
 ./scripts/provision-aws.sh
 ./scripts/demo-aws.sh        # visual demonstration: nodes, pods, services, Ingress/ALB,
                                # VPC subnet layout, and a live curl through the real ALB
 ./scripts/teardown-aws.sh
 ```
+
+### How the Mongo credential actually gets there
+
+`provision-aws.sh` requires a `MONGO_PASSWORD` environment variable — never a value
+committed anywhere in this repo (see [Security notes](#security-notes)). The same
+variable name carries the password through two different paths depending on who's
+running it, converging on the same Helm `--set` right before deployment:
+
+```
+Local operator                      GitHub Actions (deploy-aws.yml)
+  export MONGO_PASSWORD=...           secrets.MONGO_PASSWORD (repo secret)
+         |                                     |
+         +------------------+------------------+
+                            |
+                            v
+              scripts/provision-aws.sh
+                            |
+            helm upgrade --set mongo.credentials.password=...
+                            |
+                            v
+          helm/apples-app/templates/mongo-secret.yaml
+          (renders a Kubernetes Secret: username, password,
+           and a ready-to-use connection URI)
+                            |
+              +-------------+--------------+
+              |                            |
+              v                            v
+   mongo StatefulSet                  app Deployment
+   reads MONGO_INITDB_ROOT_PASSWORD   reads MONGO_URI
+   from the Secret on first boot      from the same Secret
+   (sets the real root password       (connects using the
+   mongod stores internally)          password baked into it)
+```
+
+Both the StatefulSet and the Deployment pull from the *same* Secret object, so the
+value only ever has to flow into the cluster once. It's never written to a file,
+logged, or templated into a ConfigMap — only into a `Secret`, and only read back via
+`secretKeyRef`. `provision-local.sh` follows the identical pattern for the local path,
+except it generates the value itself instead of requiring an operator-supplied one,
+since the local path shouldn't need any manual setup to run.
 
 ## CI/CD
 

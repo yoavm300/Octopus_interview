@@ -44,55 +44,86 @@ without any cloud credentials.
 ### Network topology (local / kind)
 
 ```
-                 +----------------------------+
-                 |   kind cluster "apples-local" |
-                 |                                |
-  localhost      |   +----------+     +--------+  |
-  (port-forward) +-->| app Svc  +---->| app Pod|  |
-                 |   | ClusterIP|     +----+---+  |
-                 |   +----------+          |      |
-                 |                         v      |
-                 |   +-------------+  mongo:27017 |
-                 |   | mongo Svc   +--->+--------+ |
-                 |   | headless    |    |mongo Pod| |
-                 |   +-------------+    +--------+ |
-                 +----------------------------+
+                 +------------------------------------------+
+                 |     kind cluster "apples-local"           |
+                 |                                            |
+  localhost      |   +----------+     +----------+           |
+  (port-forward) +-->| app Svc  +--+->| app Pod 1|           |
+                 |   | ClusterIP|  |  +----------+           |
+                 |   +----------+  |  +----------+           |
+                 |                 +->| app Pod 2|           |
+                 |                     +----+-----+           |
+                 |                          | allowed by      |
+                 |                          | NetworkPolicy   |
+                 |                          v (app/seed only) |
+                 |   +-------------+   mongo:27017            |
+                 |   | mongo Svc   +--->+----------+          |
+                 |   | headless    |    |mongo Pod |          |
+                 |   +-------------+    +----------+          |
+                 +------------------------------------------+
 ```
 
 No Ingress/load balancer locally — `scripts/check.sh` reaches the app via
 `kubectl port-forward`, which is sufficient for the "provision from scratch + verify"
-requirement without needing a cloud account.
+requirement without needing a cloud account. The `NetworkPolicy` blocking any other
+pod from reaching `mongo:27017` directly was verified live by actually trying it: an
+unlabeled test pod's connection timed out, an app pod's didn't.
 
 ### Network topology (AWS, bonus)
 
 ```
- Internet
-    |
-    v
- ALB (via AWS Load Balancer Controller, Ingress)
-    |
-    v
- EKS cluster (private subnets, NAT-routed egress)
-    |
-    +-- app Deployment  -- app Service (ClusterIP)
-    |
-    +-- mongo StatefulSet (EBS-backed PVC) -- mongo Service (headless)
+                              Internet
+                                 |
+                                 v
+                  ALB (AWS Load Balancer Controller,
+                   via the chart's Ingress resource)
+                                 |
+  +------------------------------+-------------------------------------+
+  |  VPC 10.0.0.0/16 -- 2 AZs    |                                     |
+  |  Public subnets (one per AZ) |                                    |
+  |   +----------+        +-------------+                             |
+  |   | ALB ENI  |        | NAT Gateway |-- egress only (image pulls,  |
+  |   +----------+        +------+------+   STS/EKS API calls)         |
+  |                              |                                    |
+  |  - - - - - - - - - - - - - - + - - - - - - - - - - - - - - - - -  |
+  |  Private subnets (one per AZ) -- EKS managed node group (2x t3.medium) |
+  |                              |                                    |
+  |   +---------------+   +------+--------+                           |
+  |   | app pod (x2)  |<--+  app Service  |<-- ALB target group       |
+  |   | Deployment    |   |  (ClusterIP)  |                           |
+  |   +------+--------+   +---------------+                           |
+  |          | allowed by NetworkPolicy                               |
+  |          | (app + seed pods only)                                 |
+  |          v                                                        |
+  |   +---------------+   +---------------+                           |
+  |   | mongo pod     |<--+ mongo Service |                           |
+  |   | StatefulSet   |   |  (headless)   |                           |
+  |   +------+--------+   +---------------+                           |
+  |          |                                                        |
+  |          v                                                        |
+  |   EBS gp3 volume (aws-ebs-csi-driver addon, dynamic provisioning) |
+  +--------------------------------------------------------------------+
+         ^
+         | image pull (tagged by commit SHA)
+       ECR  <---------------------------- EKS nodes
 
-VPC: 2 public subnets (ALB, NAT GW) + 2 private subnets (EKS nodes), across 2 AZs.
-ECR holds the built app image; EKS nodes pull from it.
+  KMS -- encrypts --> EKS secrets, ECR image layers
 ```
 
 Same Helm chart as local — only `values-aws.yaml` differs (ingress enabled with an
 ALB class, persistent storage enabled, password supplied at deploy time instead of a
-checked-in dev default).
+checked-in dev default). The `NetworkPolicy` and the 2 app replicas aren't AWS-specific
+— both come from the shared base `values.yaml` and apply on `kind` too (verified live
+on both: `kind`'s default CNI enforces it, and EKS needs `enableNetworkPolicy: "true"`
+set explicitly on the VPC CNI addon for the same policy to actually do anything there).
 
 ### Containers
 
-| Container | Image               | Role                                   |
-|-----------|---------------------|-----------------------------------------|
-| app       | built from `app/`   | serves the apples page                 |
-| mongo     | `mongo:7`           | data store                             |
-| seed      | `mongo:7` (Job)     | one-shot: inserts the fixed fruit data |
+| Container | Image               | Replicas | Role                                   |
+|-----------|---------------------|----------|------------------------------------------|
+| app       | built from `app/`   | 2        | serves the apples page                 |
+| mongo     | `mongo:8`           | 1        | data store                             |
+| seed      | `mongo:8` (Job)     | 1 (runs once) | inserts the fixed fruit data       |
 
 ### Security notes
 
@@ -256,6 +287,15 @@ since the local path shouldn't need any manual setup to run.
 
 ## CI/CD
 
+```
+push / pull_request ──┬──► ci.yml     terraform validate+tfsec · helm lint/template
+                       │               · Trivy image scan · gitleaks · kind smoke test
+                       └──► lint.yml   eslint · yamllint · actionlint · commitlint
+
+workflow_dispatch   ──┬──► deploy-aws.yml     action: apply|destroy — real AWS, OIDC auth
+ (manual, Actions tab) └──► teardown-aws.yml  always destroy — dedicated safety net
+```
+
 `.github/workflows/ci.yml` runs on every push/PR: Terraform validate/fmt + tfsec,
 Helm lint/template, a Trivy image scan, a gitleaks secrets scan, and the full local
 kind smoke test (the same thing `scripts/provision-local.sh` + `scripts/check.sh` do).
@@ -301,6 +341,13 @@ failed `apply` left a real EKS cluster running, with no state anywhere that
 The DB is seeded with exactly this data (see `helm/apples-app/values.yaml`
 `seedData`):
 
+| `_id` | name     | qty | rating | extra                 |
+|-------|----------|-----|--------|------------------------|
+| 1     | apples   | 5   | 3      |                        |
+| 2     | bananas  | 7   | 1      | `microsieverts: 0.1`   |
+| 3     | oranges  | 6   | 2      |                        |
+| 4     | avocados | 3   | 5      |                        |
+
 ```json
 [
   { "_id": 1, "name": "apples", "qty": 5, "rating": 3 },
@@ -309,3 +356,21 @@ The DB is seeded with exactly this data (see `helm/apples-app/values.yaml`
   { "_id": 4, "name": "avocados", "qty": 3, "rating": 5 }
 ]
 ```
+
+```
+helm/apples-app/values.yaml (seedData)
+          |
+          v
+templates/seed-job.yaml (post-install/post-upgrade hook Job)
+          |  db.fruits.deleteMany({}); db.fruits.insertMany(seedData)
+          v
+      mongo "fruits" collection
+          |
+          v
+app/src/db.js getFruitQty("apples")  ──►  "There are 5 apples."
+```
+
+The seed Job re-runs on every `helm upgrade`, not just the first install
+(`deleteMany` then `insertMany`), so the data is always exactly this set —
+never accumulating duplicates across repeated `provision-local.sh`/`provision-aws.sh`
+runs.

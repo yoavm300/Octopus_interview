@@ -37,4 +37,20 @@ aws eks update-kubeconfig --name "${CLUSTER_NAME}" --region "${AWS_REGION}" --al
 # ALB and its two controller-created security groups by hand before a
 # stuck destroy could proceed.
 helm uninstall apples --kube-context "${CLUSTER_NAME}" --ignore-not-found --wait --timeout 3m
-terraform -chdir=terraform destroy -auto-approve -var="region=${AWS_REGION}"
+
+# Retried, not one-shot: found live, more than once, that a handful of AWS
+# resources lag behind their own API's view of reality right after a
+# dependent resource is deleted -- a VPC-CNI secondary ENI or an EKS
+# cluster security group left behind for a few seconds after the node
+# group/cluster that owned it is already gone, blocking the subnet/VPC
+# delete with a DependencyViolation that a bare `terraform destroy` never
+# recovers from on its own. Re-running picks up exactly where the state
+# left off, since whatever already got destroyed is simply gone from it.
+for attempt in 1 2 3; do
+  if terraform -chdir=terraform destroy -auto-approve -var="region=${AWS_REGION}"; then
+    exit 0
+  fi
+  echo "==> destroy attempt ${attempt} failed, retrying in 30s (likely AWS eventual consistency on a dependent resource)" >&2
+  sleep 30
+done
+exit 1

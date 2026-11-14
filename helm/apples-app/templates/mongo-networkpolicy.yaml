@@ -1,0 +1,27 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "apples-app.fullname" . }}-mongo
+  labels:
+    {{- include "apples-app.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mongo
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "apples-app.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: mongo
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "apples-app.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: app
+        - podSelector:
+            matchLabels:
+              {{- include "apples-app.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: seed
+      ports:
+        - protocol: TCP
+          port: {{ .Values.mongo.port }}

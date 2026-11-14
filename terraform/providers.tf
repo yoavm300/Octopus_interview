@@ -16,7 +16,7 @@ terraform {
   required_providers {
     aws = {
       source  = "hashicorp/aws"
-      version = "~> 5.0"
+      version = "~> 6.0"
     }
     tls = {
       source  = "hashicorp/tls"
@@ -28,11 +28,11 @@ terraform {
     }
     kubernetes = {
       source  = "hashicorp/kubernetes"
-      version = "~> 2.0"
+      version = "~> 3.0"
     }
     helm = {
       source  = "hashicorp/helm"
-      version = "~> 2.0"
+      version = "~> 3.0"
     }
   }
 }
@@ -46,19 +46,23 @@ provider "kubernetes" {
   cluster_ca_certificate = base64decode(module.eks.cluster_ca_certificate)
 
   exec {
-    api_version = "client.authentication.k8s.io/v1beta1"
+    api_version = "client.authentication.k8s.io/v1"
     command     = "aws"
     args        = ["eks", "get-token", "--cluster-name", module.eks.cluster_name]
   }
 }
 
+# helm provider v3 moved from blocks to attributes (Plugin Framework
+# migration) -- kubernetes/exec are now object-typed attributes, not
+# blocks, so this intentionally differs in syntax from provider "kubernetes"
+# above, which is unaffected since that provider hasn't made the same move.
 provider "helm" {
-  kubernetes {
+  kubernetes = {
     host                   = module.eks.cluster_endpoint
     cluster_ca_certificate = base64decode(module.eks.cluster_ca_certificate)
 
-    exec {
-      api_version = "client.authentication.k8s.io/v1beta1"
+    exec = {
+      api_version = "client.authentication.k8s.io/v1"
       command     = "aws"
       args        = ["eks", "get-token", "--cluster-name", module.eks.cluster_name]
     }

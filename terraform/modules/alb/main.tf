@@ -33,7 +33,9 @@ resource "aws_iam_role_policy_attachment" "alb_controller" {
   policy_arn = aws_iam_policy.alb_controller.arn
 }
 
-resource "kubernetes_service_account" "alb_controller" {
+# kubernetes_service_account is deprecated as of provider v3.0.0 in favor
+# of kubernetes_service_account_v1 (same schema/behavior, renamed only).
+resource "kubernetes_service_account_v1" "alb_controller" {
   metadata {
     name      = "aws-load-balancer-controller"
     namespace = "kube-system"
@@ -55,35 +57,36 @@ resource "helm_release" "alb_controller" {
   timeout = 600
   atomic  = true
 
-  set {
-    name  = "clusterName"
-    value = var.cluster_name
-  }
+  # helm provider v3 (Plugin Framework) represents set as a list of
+  # objects instead of repeated blocks.
+  set = [
+    {
+      name  = "clusterName"
+      value = var.cluster_name
+    },
+    # Without these two, the controller resolves both via EC2 instance
+    # metadata (IMDS) from inside the pod network namespace, which timed
+    # out against this VPC's IMDS hop limit and left the controller
+    # crash-looping ("failed to get VPC ID from instance metadata: context
+    # deadline exceeded") -- not a node-readiness timing issue, as it
+    # first appeared.
+    {
+      name  = "vpcId"
+      value = var.vpc_id
+    },
+    {
+      name  = "region"
+      value = var.region
+    },
+    {
+      name  = "serviceAccount.create"
+      value = "false"
+    },
+    {
+      name  = "serviceAccount.name"
+      value = kubernetes_service_account_v1.alb_controller.metadata[0].name
+    },
+  ]
 
-  # Without these, the controller resolves both via EC2 instance metadata
-  # (IMDS) from inside the pod network namespace, which timed out against
-  # this VPC's IMDS hop limit and left the controller crash-looping
-  # ("failed to get VPC ID from instance metadata: context deadline
-  # exceeded") -- not a node-readiness timing issue, as it first appeared.
-  set {
-    name  = "vpcId"
-    value = var.vpc_id
-  }
-
-  set {
-    name  = "region"
-    value = var.region
-  }
-
-  set {
-    name  = "serviceAccount.create"
-    value = "false"
-  }
-
-  set {
-    name  = "serviceAccount.name"
-    value = kubernetes_service_account.alb_controller.metadata[0].name
-  }
-
-  depends_on = [kubernetes_service_account.alb_controller]
+  depends_on = [kubernetes_service_account_v1.alb_controller]
 }

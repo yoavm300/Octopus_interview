@@ -100,9 +100,11 @@ checked-in dev default).
   app's root filesystem is read-only (writable `/tmp` only).
 - Mongo runs as non-root too; an init container (running briefly as root) `chown`s the
   data volume so the main container doesn't need root.
-- Mongo credentials live in a Kubernetes `Secret`, never committed in plaintext. The
-  local dev password is a throwaway value in `values-local.yaml`; the AWS path expects
-  it supplied via `--set` at deploy time.
+- Mongo credentials live in a Kubernetes `Secret`, never committed in plaintext.
+  Neither `values-local.yaml` nor `values-aws.yaml` hardcodes a password —
+  `provision-local.sh` generates one into a gitignored `.local-mongo-password`
+  file and supplies it via `--set`; the AWS path expects it supplied the same
+  way from the `MONGO_PASSWORD` env var.
 
 ### Operational notes (found live, on real AWS)
 

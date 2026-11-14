@@ -58,6 +58,6 @@ module "alb" {
   # dependency edge between them (module.alb never references the access
   # entry resources) and may destroy the destroying principal's own
   # cluster access mid-teardown, exactly as module.eks's own
-  # kubernetes_storage_class.gp3 does via its explicit depends_on below.
+  # kubernetes_storage_class_v1.gp3 does via its explicit depends_on below.
   depends_on = [module.eks]
 }

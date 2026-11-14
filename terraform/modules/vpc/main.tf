@@ -23,7 +23,7 @@ resource "aws_subnet" "public" {
 
   vpc_id            = aws_vpc.this.id
   cidr_block        = cidrsubnet(var.cidr_block, 8, each.value)
-  availability_zone = "${data.aws_region.current.name}${each.key}"
+  availability_zone = "${data.aws_region.current.region}${each.key}"
   # Nothing here is a bare EC2 instance that needs an auto-assigned public IP:
   # the NAT gateway gets its own EIP, and an ALB provisions its own public IPs.
   map_public_ip_on_launch = false
@@ -39,7 +39,7 @@ resource "aws_subnet" "private" {
 
   vpc_id            = aws_vpc.this.id
   cidr_block        = cidrsubnet(var.cidr_block, 8, each.value + 100)
-  availability_zone = "${data.aws_region.current.name}${each.key}"
+  availability_zone = "${data.aws_region.current.region}${each.key}"
 
   tags = {
     Name                              = "${var.name}-private-${each.key}"

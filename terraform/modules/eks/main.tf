@@ -156,7 +156,9 @@ resource "aws_eks_addon" "ebs_csi" {
   depends_on = [aws_eks_node_group.this]
 }
 
-resource "kubernetes_storage_class" "gp3" {
+# kubernetes_storage_class is deprecated as of provider v3.0.0 in favor
+# of kubernetes_storage_class_v1 (same schema/behavior, renamed only).
+resource "kubernetes_storage_class_v1" "gp3" {
   metadata {
     name = "gp3"
     annotations = {
@@ -181,7 +183,7 @@ resource "kubernetes_storage_class" "gp3" {
 # apply failed with "Unauthorized" on every kubernetes/helm-provider
 # resource, because EKS's documented "cluster creator gets implicit
 # admin" turned out not to apply once access_config is set explicitly.
-# kubernetes_storage_class.gp3 and module.alb's kubernetes-provider
+# kubernetes_storage_class_v1.gp3 and module.alb's kubernetes-provider
 # resources both explicitly depend_on these, so they're destroyed before
 # the destroying principal's own access is revoked.
 resource "aws_eks_access_entry" "admin" {

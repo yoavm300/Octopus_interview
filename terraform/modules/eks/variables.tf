@@ -14,9 +14,15 @@ variable "node_subnet_ids" {
 }
 
 variable "kubernetes_version" {
+  # 1.31 was in EKS's EXTENDED_SUPPORT tier (its standard support window
+  # ended 2025-11-26, extended support itself ends 2026-11-26 -- about to
+  # lapse entirely) and bills an hourly surcharge on top of the regular
+  # control-plane cost. 1.36 is comfortably inside STANDARD_SUPPORT
+  # (through 2027-08-02) without being the bleeding-edge newest (1.37,
+  # released weeks ago as of this writing) just for its own sake.
   description = "EKS Kubernetes version"
   type        = string
-  default     = "1.31"
+  default     = "1.36"
 }
 
 variable "node_instance_type" {

@@ -39,10 +39,18 @@ ECR_REPO=$(terraform -chdir=terraform output -raw ecr_repository_url)
 echo "==> Configuring kubectl for EKS (context: ${CLUSTER_NAME})"
 aws eks update-kubeconfig --name "${CLUSTER_NAME}" --region "${AWS_REGION}" --alias "${CLUSTER_NAME}"
 
-echo "==> Building and pushing app image to ECR"
+# Tagged by commit, not "latest": the ECR repo is image_tag_mutability =
+# "IMMUTABLE" (terraform/modules/ecr), so re-pushing the same tag twice is
+# rejected outright by ECR unless the old image is deleted first -- which
+# is exactly the manual cleanup this caused more than once today. A
+# per-commit tag also means every deploy is independently traceable and
+# reproducible, which "latest" by definition can never be.
+IMAGE_TAG=$(git rev-parse --short HEAD)
+
+echo "==> Building and pushing app image to ECR (tag: ${IMAGE_TAG})"
 aws ecr get-login-password --region "${AWS_REGION}" | docker login --username AWS --password-stdin "${ECR_REPO%/*}"
-docker build -t "${ECR_REPO}:latest" app/
-docker push "${ECR_REPO}:latest"
+docker build -t "${ECR_REPO}:${IMAGE_TAG}" app/
+docker push "${ECR_REPO}:${IMAGE_TAG}"
 
 echo "==> Deploying with Helm (context: ${CLUSTER_NAME})"
 helm upgrade --install apples helm/apples-app \
@@ -50,7 +58,7 @@ helm upgrade --install apples helm/apples-app \
   -f helm/apples-app/values.yaml \
   -f helm/apples-app/values-aws.yaml \
   --set image.repository="${ECR_REPO}" \
-  --set image.tag=latest \
+  --set image.tag="${IMAGE_TAG}" \
   --set mongo.credentials.password="${MONGO_PASSWORD}" \
   --wait --timeout 5m
 

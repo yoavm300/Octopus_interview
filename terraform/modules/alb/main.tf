@@ -50,9 +50,6 @@ resource "helm_release" "alb_controller" {
   chart      = "aws-load-balancer-controller"
   namespace  = "kube-system"
 
-  # Default 300s wasn't enough: the node group reports ACTIVE before its
-  # nodes are actually Ready (kubelet registration + VPC CNI warm-up), so
-  # the controller pod has nowhere to schedule yet when this starts timing.
   # atomic rolls back a failed install instead of leaving a stuck release
   # that blocks the next apply.
   timeout = 600
@@ -61,6 +58,21 @@ resource "helm_release" "alb_controller" {
   set {
     name  = "clusterName"
     value = var.cluster_name
+  }
+
+  # Without these, the controller resolves both via EC2 instance metadata
+  # (IMDS) from inside the pod network namespace, which timed out against
+  # this VPC's IMDS hop limit and left the controller crash-looping
+  # ("failed to get VPC ID from instance metadata: context deadline
+  # exceeded") -- not a node-readiness timing issue, as it first appeared.
+  set {
+    name  = "vpcId"
+    value = var.vpc_id
+  }
+
+  set {
+    name  = "region"
+    value = var.region
   }
 
   set {

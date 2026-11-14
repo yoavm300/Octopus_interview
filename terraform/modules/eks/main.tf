@@ -104,6 +104,71 @@ resource "aws_eks_node_group" "this" {
   ]
 }
 
+# Modern EKS doesn't bundle a storage provisioner: MongoDB's PVC (used on
+# the AWS path, see helm/apples-app/values-aws.yaml) stays unbound forever
+# without this -- "no persistent volumes available for this claim and no
+# storage class is set" -- found live when the Mongo pod never scheduled.
+resource "aws_iam_role" "ebs_csi" {
+  name = "${var.cluster_name}-ebs-csi"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { Federated = aws_iam_openid_connect_provider.this.arn }
+      Action    = "sts:AssumeRoleWithWebIdentity"
+      Condition = {
+        StringEquals = {
+          "${replace(aws_iam_openid_connect_provider.this.url, "https://", "")}:sub" = "system:serviceaccount:kube-system:ebs-csi-controller-sa"
+          "${replace(aws_iam_openid_connect_provider.this.url, "https://", "")}:aud" = "sts.amazonaws.com"
+        }
+      }
+    }]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "ebs_csi" {
+  role       = aws_iam_role.ebs_csi.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"
+}
+
+resource "aws_eks_addon" "ebs_csi" {
+  cluster_name             = aws_eks_cluster.this.name
+  addon_name               = "aws-ebs-csi-driver"
+  service_account_role_arn = aws_iam_role.ebs_csi.arn
+
+  depends_on = [aws_eks_node_group.this]
+}
+
+resource "kubernetes_storage_class" "gp3" {
+  metadata {
+    name = "gp3"
+    annotations = {
+      "storageclass.kubernetes.io/is-default-class" = "true"
+    }
+  }
+  storage_provisioner    = "ebs.csi.aws.com"
+  volume_binding_mode    = "WaitForFirstConsumer"
+  reclaim_policy         = "Delete"
+  allow_volume_expansion = true
+  parameters = {
+    type = "gp3"
+  }
+
+  depends_on = [aws_eks_addon.ebs_csi]
+}
+
+# Known limitation, found live: if the principal running `terraform
+# destroy` is one of admin_principal_arns (not the cluster creator), these
+# have no dependency relationship to kubernetes/helm-provider resources
+# (e.g. aws_eks_addon-adjacent kubernetes_storage_class.gp3,
+# module.alb's helm_release), so Terraform may destroy this access entry
+# before those -- revoking the destroying principal's own cluster access
+# mid-destroy. Hit this debugging the ALB controller: had to manually
+# re-create the access entry via the AWS CLI to let destroy finish. Not
+# an issue for the normal CI path, where the deploy role is always both
+# creator and destroyer and always has implicit access regardless of
+# this resource.
 resource "aws_eks_access_entry" "admin" {
   for_each      = toset(var.admin_principal_arns)
   cluster_name  = aws_eks_cluster.this.name

@@ -155,20 +155,19 @@ resource "kubernetes_storage_class" "gp3" {
     type = "gp3"
   }
 
-  depends_on = [aws_eks_addon.ebs_csi]
+  # Also ensures this is destroyed before the access entries below --
+  # see their comment for why that ordering matters.
+  depends_on = [aws_eks_addon.ebs_csi, aws_eks_access_policy_association.admin]
 }
 
-# Known limitation, found live: if the principal running `terraform
-# destroy` is one of admin_principal_arns (not the cluster creator), these
-# have no dependency relationship to kubernetes/helm-provider resources
-# (e.g. aws_eks_addon-adjacent kubernetes_storage_class.gp3,
-# module.alb's helm_release), so Terraform may destroy this access entry
-# before those -- revoking the destroying principal's own cluster access
-# mid-destroy. Hit this debugging the ALB controller: had to manually
-# re-create the access entry via the AWS CLI to let destroy finish. Not
-# an issue for the normal CI path, where the deploy role is always both
-# creator and destroyer and always has implicit access regardless of
-# this resource.
+# admin_principal_arns always includes whoever is actually running
+# Terraform (see terraform/main.tf) -- without an explicit entry, a real
+# apply failed with "Unauthorized" on every kubernetes/helm-provider
+# resource, because EKS's documented "cluster creator gets implicit
+# admin" turned out not to apply once access_config is set explicitly.
+# kubernetes_storage_class.gp3 and module.alb's kubernetes-provider
+# resources both explicitly depend_on these, so they're destroyed before
+# the destroying principal's own access is revoked.
 resource "aws_eks_access_entry" "admin" {
   for_each      = toset(var.admin_principal_arns)
   cluster_name  = aws_eks_cluster.this.name

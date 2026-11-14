@@ -84,6 +84,22 @@ resource "aws_iam_role_policy_attachment" "node_ecr" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
 }
 
+# The VPC CNI EKS installs by default doesn't enforce NetworkPolicy
+# resources (helm/apples-app ships one restricting Mongo ingress to the
+# app/seed pods, verified live on kind: blocked an unlabeled pod, allowed
+# the app pod). Taking over the default-installed addon here just to turn
+# that one flag on, so the same policy is actually enforced on EKS too,
+# not merely a no-op manifest the cluster silently ignores.
+resource "aws_eks_addon" "vpc_cni" {
+  cluster_name = aws_eks_cluster.this.name
+  addon_name   = "vpc-cni"
+  configuration_values = jsonencode({
+    enableNetworkPolicy = "true"
+  })
+  resolve_conflicts_on_create = "OVERWRITE"
+  resolve_conflicts_on_update = "OVERWRITE"
+}
+
 resource "aws_eks_node_group" "this" {
   cluster_name    = aws_eks_cluster.this.name
   node_group_name = "${var.cluster_name}-ng"

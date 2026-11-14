@@ -255,44 +255,6 @@ to act on. (This is exactly what happened before the backend was added: a
 failed `apply` left a real EKS cluster running, with no state anywhere that
 `teardown-aws.yml` could use to find and remove it.)
 
-## Known limitations
-
-Deliberate simplifications, not oversights — each assessed for whether fixing it is
-actually proportionate to a demo exercise, and two of them were fixed because the
-answer was yes:
-
-- **✅ Fixed — single app replica, no isolation between components.** The app was a
-  single replica with nothing stopping any pod in the cluster from reaching Mongo
-  directly. Bumped to 2 replicas (trivial for a stateless app) and added a
-  `NetworkPolicy` restricting Mongo ingress to only the app and seed pods — verified
-  live on `kind`: an unlabeled pod's connection timed out, the app pod's didn't, and
-  `check.sh` kept passing throughout. On EKS, the default VPC CNI doesn't enforce
-  `NetworkPolicy` at all without an explicit opt-in, so `terraform/modules/eks` now
-  manages the `vpc-cni` addon directly with `enableNetworkPolicy: "true"` rather than
-  leaving the manifest a silent no-op. (Confirmed against AWS's own addon
-  configuration schema; not independently re-verified with a live EKS apply, since
-  that's the one check here that costs real money to repeat.)
-- **Not fixed — no TLS on the ALB (HTTP only).** A trusted certificate needs a real
-  domain for ACM to validate against, which this exercise doesn't have. A
-  self-signed cert would technically work but adds complexity without actually
-  demonstrating anything — not worth it for a demo.
-- **Not fixed — Mongo has no replica set / high availability.** It's a single
-  `StatefulSet` replica. A real replica set needs multiple stable members, election
-  config, and more PVCs — a meaningfully larger undertaking than a "hello world"
-  exercise calls for.
-- **Not fixed — no backup/restore strategy for Mongo's data.** Fixable in principle
-  (an EBS snapshot lifecycle policy, or a scheduled `mongodump` → S3 Job), but the
-  data here is fully reproducible from the seed Job on every install anyway, so real
-  backup infrastructure wouldn't be protecting anything that isn't already disposable.
-- **Not fixed, intentional — the ALB is publicly reachable with no IP allowlist or
-  WAF.** This needs to be reachable by whoever's grading it or discussing it without
-  extra setup on their end; restricting it would work against the exercise's own
-  purpose.
-- **Not fixed — `MONGO_PASSWORD` travels through a GitHub Secret / `--set` flag**
-  rather than a managed secret store (AWS Secrets Manager, External Secrets
-  Operator). More mature, but meaningfully more infrastructure than a demo value
-  warrants.
-
 ## Data
 
 The DB is seeded with exactly this data (see `helm/apples-app/values.yaml`

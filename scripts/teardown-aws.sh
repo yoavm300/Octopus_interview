@@ -17,6 +17,15 @@ terraform -chdir=terraform init \
 
 CLUSTER_NAME=$(terraform -chdir=terraform output -raw eks_cluster_name)
 
+# Each CI job is also a fresh runner for kubeconfig: there is no local
+# context named after the cluster until this runs. Without it, helm's
+# --kube-context below fails outright ("context ... does not exist") --
+# which a previous version of this script silently swallowed via
+# `|| true`, masking the fact that the app was never actually
+# uninstalled by CI, ever, before terraform destroy tore down the ALB
+# controller it depended on.
+aws eks update-kubeconfig --name "${CLUSTER_NAME}" --region "${AWS_REGION}" --alias "${CLUSTER_NAME}"
+
 # --wait matters here, not just for tidiness: the Ingress object carries a
 # finalizer the ALB controller uses to deprovision the real AWS load
 # balancer, and without --wait helm returns as soon as the k8s objects are
